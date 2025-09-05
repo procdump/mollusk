@@ -790,7 +790,7 @@ impl Mollusk {
             program_id_index,
             instruction_accounts,
             transaction_accounts,
-        } = crate::compile_accounts::compile_accounts(instruction, accounts, loader_key);
+        } = crate::compile_accounts::compile_accounts(instruction, accounts.iter(), loader_key);
 
         self.process_instruction_inner(
             instruction,
@@ -828,7 +828,7 @@ impl Mollusk {
                 program_id_index,
                 instruction_accounts,
                 transaction_accounts,
-            } = crate::compile_accounts::compile_accounts(instruction, accounts, loader_key);
+            } = crate::compile_accounts::compile_accounts(instruction, accounts.iter(), loader_key);
 
             let this_result = self.process_instruction_inner(
                 instruction,
@@ -882,7 +882,7 @@ impl Mollusk {
             program_id_index,
             instruction_accounts,
             transaction_accounts,
-        } = crate::compile_accounts::compile_accounts(instruction, accounts, loader_key);
+        } = crate::compile_accounts::compile_accounts(instruction, accounts.iter(), loader_key);
 
         let result = self.process_instruction_inner(
             instruction,
@@ -941,7 +941,7 @@ impl Mollusk {
                 program_id_index,
                 instruction_accounts,
                 transaction_accounts,
-            } = crate::compile_accounts::compile_accounts(instruction, accounts, loader_key);
+            } = crate::compile_accounts::compile_accounts(instruction, accounts.iter(), loader_key);
 
             let this_result = self.process_instruction_inner(
                 instruction,
