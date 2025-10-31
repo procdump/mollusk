@@ -26,6 +26,8 @@ fuzz-fd = [
 ]
 invocation-inspect-callback = []
 precompiles = ["dep:agave-precompiles"]
+sbpf-debugger = ["solana-bpf-loader-program/sbpf-debugger"]
+sbpf-interpreter-mode = ["solana-bpf-loader-program/sbpf-interpreter-mode"]
 serde = [
     "dep:serde",
     "mollusk-svm-result/serde",
