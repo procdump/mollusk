@@ -66,7 +66,7 @@ fn test_custom_register_tracing_callback() {
             _: &Pubkey,
             _: &[u8],
             _: &[InstructionAccount],
-            _: &InvokeContext,
+            _: &mut InvokeContext,
         ) {
         }
 

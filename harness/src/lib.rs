@@ -441,6 +441,8 @@
 
 pub mod account_store;
 mod compile_accounts;
+#[cfg(feature = "debugger")]
+pub mod debugger;
 pub mod epoch_stake;
 pub mod file;
 #[cfg(any(feature = "fuzz", feature = "fuzz-fd"))]
@@ -451,6 +453,8 @@ pub mod program;
 pub mod register_tracing;
 pub mod sysvar;
 
+#[cfg(feature = "debugger")]
+use crate::debugger::DefaultDebuggerCallback;
 #[cfg(feature = "register-tracing")]
 use crate::register_tracing::DefaultRegisterTracingCallback;
 // Re-export result module from mollusk-svm-result crate
@@ -546,13 +550,13 @@ pub struct Mollusk {
 
 #[cfg(feature = "invocation-inspect-callback")]
 pub trait InvocationInspectCallback {
-    fn before_invocation(
+    fn before_invocation<'a, 'b>(
         &self,
         mollusk: &Mollusk,
         program_id: &Pubkey,
-        instruction_data: &[u8],
+        instruction_data: &'a [u8],
         instruction_accounts: &[InstructionAccount],
-        invoke_context: &InvokeContext,
+        invoke_context: &mut InvokeContext<'b, 'a>,
     );
 
     fn after_invocation(
@@ -561,6 +565,8 @@ pub trait InvocationInspectCallback {
         invoke_context: &InvokeContext,
         register_tracing_enabled: bool,
     );
+
+    fn set_simulation_state(&self, _state: bool) {}
 }
 
 #[cfg(feature = "invocation-inspect-callback")]
@@ -574,7 +580,7 @@ impl InvocationInspectCallback for EmptyInvocationInspectCallback {
         _: &Pubkey,
         _: &[u8],
         _: &[InstructionAccount],
-        _: &InvokeContext,
+        _: &mut InvokeContext,
     ) {
     }
 
@@ -759,6 +765,10 @@ impl Mollusk {
             // Have a default register tracing callback if register tracing is
             // enabled.
             me.invocation_inspect_callback = Box::new(DefaultRegisterTracingCallback::default());
+        }
+        #[cfg(feature = "debugger")]
+        {
+            me.invocation_inspect_callback = Box::new(DefaultDebuggerCallback::default());
         }
 
         me
@@ -1046,7 +1056,7 @@ impl Mollusk {
                     program_id,
                     &compiled_ix.data,
                     &instruction_accounts,
-                    &invoke_context,
+                    &mut invoke_context,
                 );
             }
 
@@ -1105,6 +1115,13 @@ impl Mollusk {
             std::slice::from_ref(instruction),
             accounts.iter(),
             fallback_accounts,
+        );
+
+        self.debugger_invocation_trace(
+            transaction_accounts.as_slice(),
+            index,
+            &sanitized_message,
+            sysvar_cache,
         );
 
         let mut transaction_context = self.create_transaction_context(transaction_accounts);
@@ -1187,8 +1204,16 @@ impl Mollusk {
             &fallback_accounts,
         );
 
-        let mut transaction_context = self.create_transaction_context(transaction_accounts);
         let sysvar_cache = self.sysvars.setup_sysvar_cache(accounts);
+
+        self.debugger_invocation_trace(
+            transaction_accounts.as_slice(),
+            0,
+            &sanitized_message,
+            &sysvar_cache,
+        );
+
+        let mut transaction_context = self.create_transaction_context(transaction_accounts);
 
         let message_result = self.process_transaction_message(
             &sanitized_message,
@@ -1335,8 +1360,16 @@ impl Mollusk {
             &fallback_accounts,
         );
 
-        let mut transaction_context = self.create_transaction_context(transaction_accounts);
         let sysvar_cache = self.sysvars.setup_sysvar_cache(accounts);
+
+        self.debugger_invocation_trace(
+            transaction_accounts.as_slice(),
+            0,
+            &sanitized_message,
+            &sysvar_cache,
+        );
+
+        let mut transaction_context = self.create_transaction_context(transaction_accounts);
 
         let message_result = self.process_transaction_message(
             &sanitized_message,
@@ -1749,6 +1782,30 @@ impl Mollusk {
             account_store: Rc::new(RefCell::new(account_store)),
             hydrate_store: true, // <-- Default
         }
+    }
+
+    fn debugger_invocation_trace<'a>(
+        &self,
+        transaction_accounts: &[(Pubkey, AccountSharedData)],
+        index: usize,
+        sanitized_message: &'a SanitizedMessage,
+        sysvar_cache: &SysvarCache,
+    ) -> MessageResult {
+        self.invocation_inspect_callback.set_simulation_state(true);
+
+        let mut transaction_context =
+            self.create_transaction_context(transaction_accounts.to_vec());
+        transaction_context.set_top_level_instruction_index(index);
+
+        let message_result = self.process_transaction_message(
+            &sanitized_message,
+            &mut transaction_context,
+            sysvar_cache,
+        );
+
+        self.invocation_inspect_callback.set_simulation_state(false);
+
+        message_result
     }
 }
 

@@ -82,7 +82,7 @@ impl InvocationInspectCallback for DefaultRegisterTracingCallback {
         _: &Pubkey,
         _: &[u8],
         _: &[InstructionAccount],
-        _: &InvokeContext,
+        _: &mut InvokeContext,
     ) {
     }
 
