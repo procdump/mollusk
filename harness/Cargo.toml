@@ -10,12 +10,13 @@ edition = { workspace = true }
 version = { workspace = true }
 
 [features]
-default = []
+default = ["debugger"]
 all-builtins = [
     "dep:solana-loader-v4-program",
     "dep:solana-vote-program",
     "dep:solana-zk-elgamal-proof-program",
 ]
+debugger = ["register-tracing"]
 fuzz = [
     "dep:mollusk-svm-fuzz-fixture",
     "dep:mollusk-svm-fuzz-fs",

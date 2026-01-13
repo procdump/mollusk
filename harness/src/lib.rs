@@ -441,6 +441,8 @@
 
 pub mod account_store;
 mod compile_accounts;
+#[cfg(feature = "debugger")]
+pub mod debugger;
 pub mod epoch_stake;
 pub mod file;
 #[cfg(any(feature = "fuzz", feature = "fuzz-fd"))]
@@ -451,6 +453,8 @@ pub mod program;
 pub mod register_tracing;
 pub mod sysvar;
 
+#[cfg(feature = "debugger")]
+use crate::debugger::DefaultDebuggerCallback;
 #[cfg(feature = "register-tracing")]
 use crate::register_tracing::DefaultRegisterTracingCallback;
 // Re-export result module from mollusk-svm-result crate
@@ -759,6 +763,11 @@ impl Mollusk {
             // Have a default register tracing callback if register tracing is
             // enabled.
             me.invocation_inspect_callback = Box::new(DefaultRegisterTracingCallback::default());
+        }
+        #[cfg(feature = "debugger")]
+        {
+            // Have a default debugger callback
+            me.invocation_inspect_callback = Box::new(DefaultDebuggerCallback::default());
         }
 
         me
