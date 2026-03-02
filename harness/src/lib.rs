@@ -460,7 +460,7 @@ use mollusk_svm_result::Compare;
 #[cfg(feature = "precompiles")]
 use solana_precompile_error::PrecompileError;
 #[cfg(feature = "invocation-inspect-callback")]
-use solana_transaction_context::InstructionAccount;
+use solana_transaction_context::instruction_accounts::InstructionAccount;
 use {
     crate::{
         account_store::AccountStore, epoch_stake::EpochStake, program::ProgramCache,
@@ -492,7 +492,7 @@ use {
     solana_svm_log_collector::LogCollector,
     solana_svm_timings::ExecuteTimings,
     solana_svm_transaction::instruction::SVMInstruction,
-    solana_transaction_context::{IndexOfAccount, TransactionContext},
+    solana_transaction_context::{transaction::TransactionContext, IndexOfAccount},
     solana_transaction_error::TransactionError,
     std::{
         cell::RefCell,
@@ -902,6 +902,7 @@ impl Mollusk {
             self.sysvars.rent.clone(),
             self.compute_budget.max_instruction_stack_depth,
             self.compute_budget.max_instruction_trace_length,
+            1,
         )
     }
 
@@ -1098,7 +1099,7 @@ impl Mollusk {
 
     fn process_instruction_chain_element(
         &self,
-        index: usize,
+        _index: usize,
         instruction: &Instruction,
         accounts: &[(Pubkey, Account)],
         fallback_accounts: &HashMap<Pubkey, Account>,
@@ -1111,7 +1112,6 @@ impl Mollusk {
         );
 
         let mut transaction_context = self.create_transaction_context(transaction_accounts);
-        transaction_context.set_top_level_instruction_index(index);
 
         let message_result = self.process_transaction_message(
             &sanitized_message,
