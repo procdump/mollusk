@@ -10,7 +10,7 @@ edition = { workspace = true }
 version = { workspace = true }
 
 [features]
-default = []
+default = ["sbpf-debugger"] # TODO REMOVE: added just for easy testing.
 all-builtins = [
     "dep:solana-compute-budget-program",
     "dep:solana-loader-v4-program",
@@ -35,8 +35,10 @@ precompiles = ["dep:agave-precompiles"]
 register-tracing = [
     "invocation-inspect-callback",
     "dep:hex",
-    "dep:sha2"
+    "dep:sha2",
+    "dep:nom"
 ]
+sbpf-debugger = ["register-tracing", "solana-program-runtime/sbpf-debugger"]
 serde = [
     "dep:serde",
     "mollusk-svm-result/serde",
@@ -54,6 +56,7 @@ mollusk-svm-fuzz-fixture = { workspace = true, optional = true }
 mollusk-svm-fuzz-fixture-firedancer = { workspace = true, optional = true }
 mollusk-svm-fuzz-fs = { workspace = true, optional = true }
 mollusk-svm-result = { workspace = true }
+nom = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 solana-account = { workspace = true }
 # TODO: temporary until Agave packages are released.
