@@ -338,8 +338,8 @@ fn test_cpi() {
     //             ),
     //         ],
     //         &[
-    //             Check::instruction_err(InstructionError::PrivilegeEscalation), // CPI
-    //         ],
+    //             Check::instruction_err(InstructionError::PrivilegeEscalation), //
+    // CPI         ],
     //     );
     // }
 

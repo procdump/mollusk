@@ -133,7 +133,10 @@ impl InvocationInspectCallback for DefaultRegisterTracingCallback {
                 &|instruction_context: InstructionContext,
                   executable: &Executable,
                   register_trace: RegisterTrace| {
-                    eprintln!("index in trace: {}", instruction_context.get_index_in_trace());
+                    eprintln!(
+                        "index in trace: {}",
+                        instruction_context.get_index_in_trace()
+                    );
                     if let Err(e) =
                         self.handler(mollusk, instruction_context, executable, register_trace)
                     {
