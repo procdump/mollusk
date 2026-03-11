@@ -27,12 +27,12 @@ audit:
 # RUSTSEC-2025-0009: Some AES functions may panic when overflow checking is enabled
 
 build-test-programs:
-	@cargo build-sbf --manifest-path test-programs/cpi-target/Cargo.toml
-	@cargo build-sbf --manifest-path test-programs/custom-syscall/Cargo.toml
-	@cargo build-sbf --manifest-path test-programs/epoch-stake/Cargo.toml
-	@cargo build-sbf --manifest-path test-programs/instructions-sysvar/Cargo.toml
-	@cargo build-sbf --manifest-path test-programs/noop-log/Cargo.toml
-	@cargo build-sbf --manifest-path test-programs/primary/Cargo.toml
+	@RUST_LOG=debug RUSTFLAGS="-C strip=none -C debuginfo=2" /tmp/cargo-build-sbf --manifest-path test-programs/cpi-target/Cargo.toml --debug -- --release
+	@RUST_LOG=debug RUSTFLAGS="-C strip=none -C debuginfo=2" /tmp/cargo-build-sbf --manifest-path test-programs/custom-syscall/Cargo.toml --debug -- --release
+	@RUST_LOG=debug RUSTFLAGS="-C strip=none -C debuginfo=2" /tmp/cargo-build-sbf --manifest-path test-programs/epoch-stake/Cargo.toml --debug -- --release
+	@RUST_LOG=debug RUSTFLAGS="-C strip=none -C debuginfo=2" /tmp/cargo-build-sbf --manifest-path test-programs/instructions-sysvar/Cargo.toml --debug -- --release
+	@RUST_LOG=debug RUSTFLAGS="-C strip=none -C debuginfo=2" /tmp/cargo-build-sbf --manifest-path test-programs/noop-log/Cargo.toml --debug -- --release
+	@RUST_LOG=debug RUSTFLAGS="-C strip=none -C debuginfo=2" /tmp/cargo-build-sbf --manifest-path test-programs/primary/Cargo.toml --debug -- --release
 
 # Pre-publish checks
 prepublish:
