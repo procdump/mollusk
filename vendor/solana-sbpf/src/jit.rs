@@ -1166,7 +1166,7 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
         self.emit_validate_and_profile_instruction_count(Some(0));
         if self.config.enable_register_tracing {
             self.emit_rust_call(
-                Value::Constant64(EbpfVm::<C>::emit_register_trace as *const u8 as u64 as i64, false),
+                Value::Constant64(EbpfVm::<C>::emit_trace_event_on_syscall_entry as *const u8 as u64 as i64, false),
                 &[Argument { index: 0, value: Value::RegisterPlusConstant32(REGISTER_PTR_TO_VM, self.slot_in_vm(RuntimeEnvironmentSlot::HostStackPointer), false) }],
                 None,
             );

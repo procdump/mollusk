@@ -592,7 +592,7 @@ impl<'a, 'b, C: ContextObject> Interpreter<'a, 'b, C> {
 
     fn dispatch_syscall(&mut self, function: BuiltinFunction<C>) -> &ProgramResult {
         if self.executable.get_config().enable_register_tracing {
-            self.vm.emit_register_trace();
+            self.vm.emit_trace_event_on_syscall_entry();
         }
         self.vm.due_insn_count = self.vm.previous_instruction_meter - self.vm.due_insn_count;
         self.vm.registers[0..6].copy_from_slice(&self.reg[0..6]);

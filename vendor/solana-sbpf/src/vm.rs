@@ -136,14 +136,19 @@ impl<C: ContextObject> Executable<C> {
     }
 }
 
+/// Trace events a VM can emit
+pub enum TraceEvent<'a> {
+    SyscallEntry(&'a mut Vec<RegisterTraceEntry>),
+}
+
 /// Runtime context
 pub trait ContextObject {
     /// Consume instructions from meter
     fn consume(&mut self, amount: u64);
     /// Get the number of remaining instructions allowed
     fn get_remaining(&self) -> u64;
-    /// Collect a register trace
-    fn emit_trace(&mut self, register_trace: &mut Vec<RegisterTraceEntry>) {
+    /// A VM could notify with trace-related events
+    fn emit_trace_event(&mut self, trace_event: TraceEvent<'_>) {
         // Leave the trace handling strategy to the implementor.
     }
 }
@@ -406,12 +411,12 @@ impl<'a, C: ContextObject> EbpfVm<'a, C> {
         (instruction_count, result)
     }
 
-    /// Emit the current register trace
+    /// Emit a trace event upon entering a syscall
     #[cold]
     #[inline(never)]
-    pub(crate) fn emit_register_trace(&mut self) {
+    pub(crate) fn emit_trace_event_on_syscall_entry(&mut self) {
         self.context_object_pointer
-            .emit_trace(&mut self.register_trace);
+            .emit_trace_event(TraceEvent::SyscallEntry(&mut self.register_trace));
     }
 
     /// Invokes a built-in function

@@ -20,7 +20,7 @@ use {
         error::{EbpfError, ProgramResult},
         memory_region::MemoryMapping,
         program::{BuiltinFunction, SBPFVersion},
-        vm::{Config, ContextObject, EbpfVm},
+        vm::{Config, ContextObject, EbpfVm, TraceEvent},
     },
     solana_sdk_ids::{
         bpf_loader, bpf_loader_deprecated, bpf_loader_upgradeable, loader_v4, native_loader, sysvar,
@@ -99,8 +99,12 @@ impl ContextObject for InvokeContext<'_, '_> {
         *self.compute_meter.borrow()
     }
 
-    fn emit_trace(&mut self, register_trace: &mut Vec<RegisterTraceEntry>) {
-        self.insert_register_trace(std::mem::take(register_trace));
+    fn emit_trace_event(&mut self, event: TraceEvent<'_>) {
+        match event {
+            TraceEvent::SyscallEntry(register_trace) => {
+                self.insert_register_trace(std::mem::take(register_trace))
+            }
+        }
     }
 }
 
