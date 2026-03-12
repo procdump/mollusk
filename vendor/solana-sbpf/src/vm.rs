@@ -142,6 +142,10 @@ pub trait ContextObject {
     fn consume(&mut self, amount: u64);
     /// Get the number of remaining instructions allowed
     fn get_remaining(&self) -> u64;
+    /// Collect a register trace
+    fn emit_trace(&mut self, register_trace: &mut Vec<RegisterTraceEntry>) {
+        // Leave the trace handling strategy to the implementor.
+    }
 }
 
 /// Statistic of taken branches (from a recorded trace)
@@ -400,6 +404,14 @@ impl<'a, C: ContextObject> EbpfVm<'a, C> {
         let mut result = ProgramResult::Ok(0);
         std::mem::swap(&mut result, &mut self.program_result);
         (instruction_count, result)
+    }
+
+    /// Emit the current register trace
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn emit_register_trace(&mut self) {
+        self.context_object_pointer
+            .emit_trace(&mut self.register_trace);
     }
 
     /// Invokes a built-in function

@@ -1164,6 +1164,13 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
 
     fn emit_syscall_dispatch(&mut self, function: BuiltinFunction<C>) {
         self.emit_validate_and_profile_instruction_count(Some(0));
+        if self.config.enable_register_tracing {
+            self.emit_rust_call(
+                Value::Constant64(EbpfVm::<C>::emit_register_trace as *const u8 as u64 as i64, false),
+                &[Argument { index: 0, value: Value::RegisterPlusConstant32(REGISTER_PTR_TO_VM, self.slot_in_vm(RuntimeEnvironmentSlot::HostStackPointer), false) }],
+                None,
+            );
+        }
         self.emit_ins(X86Instruction::load_immediate(REGISTER_SCRATCH, function as usize as i64));
         self.emit_ins(X86Instruction::call_immediate(self.relative_to_anchor(ANCHOR_EXTERNAL_FUNCTION_CALL, 5)));
         self.emit_undo_profile_instruction_count(0);

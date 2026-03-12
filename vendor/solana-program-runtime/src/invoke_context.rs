@@ -5,6 +5,7 @@ use {
             ProgramCacheEntry, ProgramCacheEntryType, ProgramCacheForTxBatch,
             ProgramRuntimeEnvironments,
         },
+        solana_sbpf::static_analysis::RegisterTraceEntry,
         stable_log,
         sysvar_cache::SysvarCache,
     },
@@ -96,6 +97,10 @@ impl ContextObject for InvokeContext<'_, '_> {
 
     fn get_remaining(&self) -> u64 {
         *self.compute_meter.borrow()
+    }
+
+    fn emit_trace(&mut self, register_trace: &mut Vec<RegisterTraceEntry>) {
+        self.insert_register_trace(std::mem::take(register_trace));
     }
 }
 
