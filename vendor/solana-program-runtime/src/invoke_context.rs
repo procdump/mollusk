@@ -101,7 +101,7 @@ impl ContextObject for InvokeContext<'_, '_> {
 
     fn emit_trace_event(&mut self, event: TraceEvent<'_>) {
         match event {
-            TraceEvent::SyscallEntry(register_trace) => {
+            TraceEvent::SyscallEntry(register_trace) | TraceEvent::ProgramExecuted(register_trace) => {
                 self.insert_register_trace(std::mem::take(register_trace))
             }
         }

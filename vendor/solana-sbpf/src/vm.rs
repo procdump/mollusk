@@ -139,6 +139,7 @@ impl<C: ContextObject> Executable<C> {
 /// Trace events a VM can emit
 pub enum TraceEvent<'a> {
     SyscallEntry(&'a mut Vec<RegisterTraceEntry>),
+    ProgramExecuted(&'a mut Vec<RegisterTraceEntry>),
 }
 
 /// Runtime context
@@ -408,6 +409,9 @@ impl<'a, C: ContextObject> EbpfVm<'a, C> {
         };
         let mut result = ProgramResult::Ok(0);
         std::mem::swap(&mut result, &mut self.program_result);
+        if config.enable_register_tracing {
+            self.emit_trace_event_on_program_finish();
+        }
         (instruction_count, result)
     }
 
@@ -417,6 +421,14 @@ impl<'a, C: ContextObject> EbpfVm<'a, C> {
     pub(crate) fn emit_trace_event_on_syscall_entry(&mut self) {
         self.context_object_pointer
             .emit_trace_event(TraceEvent::SyscallEntry(&mut self.register_trace));
+    }
+
+    /// Emit a trace event upon finishing executing a program
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn emit_trace_event_on_program_finish(&mut self) {
+        self.context_object_pointer
+            .emit_trace_event(TraceEvent::ProgramExecuted(&mut self.register_trace));
     }
 
     /// Invokes a built-in function
