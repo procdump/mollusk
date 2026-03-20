@@ -1,0 +1,233 @@
+//! The public-key (validity) proof system.
+//!
+//! The protocol guarantees computational soundness (by the hardness of discrete log) and perfect
+//! zero-knowledge in the random oracle model.
+
+#[cfg(not(target_os = "solana"))]
+use {
+    crate::{
+        encryption::{
+            elgamal::{ElGamalKeypair, ElGamalPubkey},
+            pedersen::H,
+        },
+        sigma_proofs::{canonical_scalar_from_optional_slice, ristretto_point_from_optional_slice},
+        UNIT_LEN,
+    },
+    rand::rngs::OsRng,
+    zeroize::Zeroize,
+};
+use {
+    crate::{
+        sigma_proofs::errors::{PubkeyValidityProofVerificationError, SigmaProofVerificationError},
+        transcript::TranscriptProtocol,
+    },
+    curve25519_dalek::{
+        ristretto::{CompressedRistretto, RistrettoPoint},
+        scalar::Scalar,
+        traits::{IsIdentity, VartimeMultiscalarMul},
+    },
+    merlin::Transcript,
+};
+
+/// Byte length of a public key validity proof.
+const PUBKEY_VALIDITY_PROOF_LEN: usize = UNIT_LEN * 2;
+
+/// Public-key proof.
+///
+/// Contains all the elliptic curve and scalar components that make up the sigma protocol.
+#[allow(non_snake_case)]
+#[derive(Clone)]
+pub struct PubkeyValidityProof {
+    Y: CompressedRistretto,
+    z: Scalar,
+}
+
+#[allow(non_snake_case)]
+#[cfg(not(target_os = "solana"))]
+impl PubkeyValidityProof {
+    /// Creates a public key validity proof.
+    ///
+    /// This function is randomized. It uses `OsRng` internally to generate random scalars.
+    ///
+    /// This function panics if the provided keypair is not valid (i.e. secret key is not
+    /// invertible).
+    ///
+    /// * `elgamal_keypair` = The ElGamal keypair that pertains to the ElGamal public key to be
+    ///   proved
+    /// * `transcript` - The transcript that does the bookkeeping for the Fiat-Shamir heuristic
+    pub fn new(elgamal_keypair: &ElGamalKeypair, transcript: &mut Transcript) -> Self {
+        Self::hash_context_into_transcript(elgamal_keypair.pubkey(), transcript);
+        transcript.pubkey_proof_domain_separator();
+
+        // extract the relevant scalar and Ristretto points from the input
+        let s = elgamal_keypair.secret().get_scalar();
+
+        assert!(s != &Scalar::ZERO);
+        let mut s_inv = s.invert();
+
+        // generate a random masking factor that also serves as a nonce
+        let mut y = Scalar::random(&mut OsRng);
+        let Y = (&y * &(*H)).compress();
+
+        // record masking factors in transcript and get challenges
+        transcript.append_point(b"Y", &Y);
+        let c = transcript.challenge_scalar(b"c");
+
+        // compute masked secret key
+        let z = &(&c * s_inv) + &y;
+
+        // zeroize all sensitive non-reference variables
+        s_inv.zeroize();
+        y.zeroize();
+
+        Self { Y, z }
+    }
+
+    /// Verifies a public key validity proof. The function rejects identity public keys
+    /// even if the verifying algebraic relation holds.
+    ///
+    /// * `elgamal_pubkey` - The ElGamal public key to be proved
+    /// * `transcript` - The transcript that does the bookkeeping for the Fiat-Shamir heuristic
+    pub fn verify(
+        self,
+        elgamal_pubkey: &ElGamalPubkey,
+        transcript: &mut Transcript,
+    ) -> Result<(), PubkeyValidityProofVerificationError> {
+        Self::hash_context_into_transcript(elgamal_pubkey, transcript);
+        transcript.pubkey_proof_domain_separator();
+
+        // extract the relevant scalar and Ristretto points from the input
+        let P = elgamal_pubkey.get_point();
+
+        if P.is_identity() {
+            return Err(SigmaProofVerificationError::IdentityPoint.into());
+        }
+
+        // include Y to transcript and extract challenge
+        transcript.validate_and_append_point(b"Y", &self.Y)?;
+        let c = transcript.challenge_scalar(b"c");
+
+        // check that the required algebraic condition holds
+        let Y = self
+            .Y
+            .decompress()
+            .ok_or(SigmaProofVerificationError::Deserialization)?;
+
+        let check = RistrettoPoint::vartime_multiscalar_mul(
+            vec![&self.z, &(-&c), &(-&Scalar::ONE)],
+            vec![&(*H), P, &Y],
+        );
+
+        if check.is_identity() {
+            Ok(())
+        } else {
+            Err(SigmaProofVerificationError::AlgebraicRelation.into())
+        }
+    }
+
+    fn hash_context_into_transcript(pubkey: &ElGamalPubkey, transcript: &mut Transcript) {
+        transcript.append_message(b"pubkey", &pubkey.to_bytes());
+    }
+
+    pub fn to_bytes(&self) -> [u8; PUBKEY_VALIDITY_PROOF_LEN] {
+        let mut buf = [0_u8; PUBKEY_VALIDITY_PROOF_LEN];
+        let mut chunks = buf.chunks_mut(UNIT_LEN);
+        chunks.next().unwrap().copy_from_slice(self.Y.as_bytes());
+        chunks.next().unwrap().copy_from_slice(self.z.as_bytes());
+        buf
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, PubkeyValidityProofVerificationError> {
+        if bytes.len() != PUBKEY_VALIDITY_PROOF_LEN {
+            return Err(SigmaProofVerificationError::Deserialization.into());
+        }
+
+        let mut chunks = bytes.chunks(UNIT_LEN);
+        let Y = ristretto_point_from_optional_slice(chunks.next())?;
+        let z = canonical_scalar_from_optional_slice(chunks.next())?;
+        Ok(PubkeyValidityProof { Y, z })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use {
+        super::*,
+        crate::{
+            encryption::pod::elgamal::PodElGamalPubkey, sigma_proofs::pod::PodPubkeyValidityProof,
+        },
+        bytemuck::Zeroable,
+        curve25519_dalek::traits::Identity,
+        solana_address::Address,
+        solana_keypair::Keypair,
+        std::str::FromStr,
+    };
+
+    #[test]
+    fn test_pubkey_proof_correctness() {
+        // random ElGamal keypair
+        let keypair = ElGamalKeypair::new_rand();
+
+        let mut prover_transcript = Transcript::new_zk_elgamal_transcript(b"test");
+        let mut verifier_transcript = Transcript::new_zk_elgamal_transcript(b"test");
+
+        let proof = PubkeyValidityProof::new(&keypair, &mut prover_transcript);
+        proof
+            .verify(keypair.pubkey(), &mut verifier_transcript)
+            .unwrap();
+
+        // derived ElGamal keypair
+        let keypair =
+            ElGamalKeypair::new_from_signer(&Keypair::new(), Address::default().as_ref()).unwrap();
+
+        let mut prover_transcript = Transcript::new_zk_elgamal_transcript(b"test");
+        let mut verifier_transcript = Transcript::new_zk_elgamal_transcript(b"test");
+
+        let proof = PubkeyValidityProof::new(&keypair, &mut prover_transcript);
+        proof
+            .verify(keypair.pubkey(), &mut verifier_transcript)
+            .unwrap();
+
+        assert_eq!(
+            prover_transcript.challenge_scalar(b"test"),
+            verifier_transcript.challenge_scalar(b"test"),
+        )
+    }
+
+    #[test]
+    fn test_pubkey_proof_str() {
+        let pubkey_str = "lhKgvZ+xRsKTR7wfKNlpltvPZk0Pc5MfpyVlqRmDcAk=";
+        let pod_pubkey = PodElGamalPubkey::from_str(pubkey_str).unwrap();
+        let pubkey: ElGamalPubkey = pod_pubkey.try_into().unwrap();
+
+        let proof_str = "utgoLBANuVRtvN7YyZrUwz0dZL+ObsDlRpJdb6erXiQZWCtkvRbSJ8mSBKPvkahHunah80JooQWqhFQXkOCWBw==";
+        let pod_proof = PodPubkeyValidityProof::from_str(proof_str).unwrap();
+        let proof: PubkeyValidityProof = pod_proof.try_into().unwrap();
+
+        let mut verifier_transcript = Transcript::new_zk_elgamal_transcript(b"test");
+
+        proof.verify(&pubkey, &mut verifier_transcript).unwrap();
+    }
+
+    #[test]
+    fn test_pubkey_proof_verify_identity() {
+        // An identity ElGamal pubkey
+        let identity_pubkey: ElGamalPubkey = PodElGamalPubkey::zeroed().try_into().unwrap();
+
+        // A dummy proof
+        let proof = PubkeyValidityProof {
+            Y: RistrettoPoint::identity().compress(),
+            z: Scalar::ZERO,
+        };
+
+        let mut verifier_transcript = Transcript::new_zk_elgamal_transcript(b"test");
+        let err = proof
+            .verify(&identity_pubkey, &mut verifier_transcript)
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            PubkeyValidityProofVerificationError::from(SigmaProofVerificationError::IdentityPoint)
+        );
+    }
+}
