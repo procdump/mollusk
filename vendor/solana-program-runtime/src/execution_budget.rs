@@ -33,8 +33,27 @@ fn get_invoke_unit_cost(simd_0339_active: bool) -> u64 {
 /// Max call depth. This is the maximum nesting of SBF to SBF call that can happen within a program.
 pub const MAX_CALL_DEPTH: usize = 64;
 
-/// The size of one SBF stack frame.
-pub const STACK_FRAME_SIZE: usize = 4096;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "sbpf-debugger")] {
+        /// The size of one SBF stack frame.
+        pub fn get_stack_frame_size() -> usize {
+            const STACK_FRAME_SIZE: usize = 4096;
+            static CELL: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+            *CELL.get_or_init(|| {
+                std::env::var("SBF_STACK_FRAME_SIZE")
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(STACK_FRAME_SIZE)
+            })
+        }
+    } else {
+        /// The size of one SBF stack frame.
+        #[inline(always)]
+        pub fn get_stack_frame_size() -> usize {
+            4096
+        }
+    }
+}
 
 pub const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
@@ -91,7 +110,7 @@ impl SVMTransactionExecutionBudget {
             max_instruction_trace_length: MAX_INSTRUCTION_TRACE_LENGTH,
             sha256_max_slices: 20_000,
             max_call_depth: MAX_CALL_DEPTH,
-            stack_frame_size: STACK_FRAME_SIZE,
+            stack_frame_size: get_stack_frame_size(),
             heap_size: u32::try_from(solana_program_entrypoint::HEAP_LENGTH).unwrap(),
         }
     }

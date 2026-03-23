@@ -17,6 +17,14 @@ fn process_instruction(
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
 
+    let mut c = true;
+    let a = [0u8; 8192];
+    for e in &a {
+        let b = [0u8; 4096];
+        if *e == 0 && b[0] == 0 {
+            c = false;
+        }
+    }
     match input.split_first() {
         Some((0, _)) => {
             // No-op.
