@@ -449,8 +449,6 @@ pub mod instructions_sysvar;
 pub mod program;
 #[cfg(feature = "register-tracing")]
 pub mod register_tracing;
-#[cfg(feature = "register-tracing")]
-pub mod register_tracing_filter;
 pub mod sysvar;
 
 #[cfg(feature = "register-tracing")]

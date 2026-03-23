@@ -1,15 +1,12 @@
 use {
-    crate::{
-        register_tracing_filter::{eval, expr},
-        InvocationInspectCallback, Mollusk,
-    },
+    crate::{InvocationInspectCallback, Mollusk},
     sha2::{Digest, Sha256},
     solana_program_runtime::invoke_context::{Executable, InvokeContext, RegisterTrace},
     solana_pubkey::Pubkey,
     solana_transaction_context::{
         instruction::InstructionContext, instruction_accounts::InstructionAccount,
     },
-    std::{collections::HashMap, fs::File, io::Write},
+    std::{fs::File, io::Write},
 };
 
 const DEFAULT_PATH: &str = "target/sbf/trace";
@@ -19,7 +16,6 @@ const DEFAULT_DEBUG_PORT: Option<u16> = None;
 pub struct DefaultRegisterTracingCallback {
     pub sbf_trace_dir: String,
     pub sbf_trace_disassemble: bool,
-    pub sbf_trace_filter: String,
     #[cfg(feature = "sbpf-debugger")]
     pub sbf_debug_port: Option<u16>,
 }
@@ -30,7 +26,6 @@ impl Default for DefaultRegisterTracingCallback {
             // User can override default path with `SBF_TRACE_DIR` environment variable.
             sbf_trace_dir: std::env::var("SBF_TRACE_DIR").unwrap_or(DEFAULT_PATH.to_string()),
             sbf_trace_disassemble: std::env::var("SBF_TRACE_DISASSEMBLE").is_ok(),
-            sbf_trace_filter: std::env::var("SBF_TRACE_FILTER").unwrap_or_default(),
             // The port that will be used for debugging.
             // Will invoke the debugger if set.
             #[cfg(feature = "sbpf-debugger")]
@@ -63,16 +58,6 @@ impl DefaultRegisterTracingCallback {
         }
     }
 
-    pub fn match_filter(&self, program_ids: Vec<String>) -> bool {
-        let Ok(ast) = expr(&self.sbf_trace_filter) else {
-            // Garbage in tracing filter. Proceeding as if no filter present.
-            return true;
-        };
-
-        let row = HashMap::from([("program_id", program_ids)]);
-        eval(&ast, &row)
-    }
-
     pub fn pre_handler(
         &self,
         mollusk: &Mollusk,
@@ -86,21 +71,14 @@ impl DefaultRegisterTracingCallback {
             // Persist SHA-256 mapping for every ELF account.
             // We need them later to judge what symbol object to
             // load in the debugger client.
-            if let Ok(program_ids) = self.elf_accounts_to_sha256(
+            if let Ok(_program_ids) = self.elf_accounts_to_sha256(
                 mollusk,
                 program_id,
                 instruction_accounts,
                 invoke_context,
             ) {
-                // Any program id that matches the filter should invoke the debugger.
-                let program_ids = program_ids
-                    .iter()
-                    .map(|program_id| program_id.to_string())
-                    .collect();
                 if let Some(debug_port) = self.sbf_debug_port {
-                    if self.match_filter(program_ids) {
-                        invoke_context.debug_port = Some(debug_port);
-                    }
+                    invoke_context.debug_port = Some(debug_port);
                 }
             }
         }
@@ -120,10 +98,6 @@ impl DefaultRegisterTracingCallback {
 
         // Get program_id.
         let program_id = instruction_context.get_program_key()?;
-        if !self.match_filter(vec![program_id.to_string()]) {
-            // Skip this one since no filter has matched.
-            return Ok(());
-        }
 
         let current_dir = std::env::current_dir()?;
         let sbf_trace_dir = current_dir.join(&self.sbf_trace_dir);

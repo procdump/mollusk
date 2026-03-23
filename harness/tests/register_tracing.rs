@@ -438,16 +438,6 @@ mod debugger_tests {
             0,
         );
 
-        // Phase 1 - test that debugger won't start (won't hang listening)
-        // as we filter by *inexisting* program_id.
-
-        let tracing_callback: &mut DefaultRegisterTracingCallback = mollusk
-            .invocation_inspect_callback
-            .as_any_mut()
-            .downcast_mut()
-            .unwrap();
-        tracing_callback.sbf_trace_filter = format!("program_id == {}", Pubkey::new_unique());
-
         let data = &[1, 2, 3, 4, 5];
         let space = data.len();
         let lamports = mollusk.sysvars.rent.minimum_balance(space);
@@ -479,140 +469,116 @@ mod debugger_tests {
             ),
         ];
 
-        // Execute the instruction. No TCP listening hang expected.
-        let _ = mollusk.process_instruction(&instruction, accounts);
+        let tracing_callback: &DefaultRegisterTracingCallback = mollusk
+            .invocation_inspect_callback
+            .as_any()
+            .downcast_ref()
+            .unwrap();
 
-        // Phase 2 - test that debugger *will* start
-        // - if the filter is empty (this is the case in this test since the debug_port
-        //   is set)
-        // - if the filter matches either CPI callee or CPI caller
-        // - if the filter is for the CPI target
-        let empty_filter = "";
-        let filters = [
-            empty_filter.into(),
-            format!("program_id == {program_id} || program_id == {cpi_target_program_id}",),
-            format!("program_id == {cpi_target_program_id}"),
-        ];
-        for filter in filters.into_iter() {
-            let tracing_callback: &mut DefaultRegisterTracingCallback = mollusk
-                .invocation_inspect_callback
-                .as_any_mut()
-                .downcast_mut()
-                .unwrap();
-            tracing_callback.sbf_trace_filter = filter;
+        let program_id_file = std::path::PathBuf::from(&tracing_callback.sbf_trace_dir)
+            .join("program_ids")
+            .with_extension("map");
 
-            let program_id_file = std::path::PathBuf::from(&tracing_callback.sbf_trace_dir)
-                .join("program_ids")
-                .with_extension("map");
+        // This is the expected program IDs <-> SHA-256 mapping.
+        let expected_program_ids = format!(
+            "{}={}\n{}={}\n",
+            program_id,
+            compute_hash(
+                mollusk
+                    .program_cache
+                    .get_program_elf_bytes(&program_id)
+                    .unwrap()
+                    .as_slice()
+            ),
+            cpi_target_program_id,
+            compute_hash(
+                mollusk
+                    .program_cache
+                    .get_program_elf_bytes(&cpi_target_program_id)
+                    .unwrap()
+                    .as_slice()
+            )
+        );
 
-            // This is the expected program IDs <-> SHA-256 mapping.
-            let expected_program_ids = format!(
-                "{}={}\n{}={}\n",
-                program_id,
-                compute_hash(
-                    mollusk
-                        .program_cache
-                        .get_program_elf_bytes(&program_id)
-                        .unwrap()
-                        .as_slice()
-                ),
-                cpi_target_program_id,
-                compute_hash(
-                    mollusk
-                        .program_cache
-                        .get_program_elf_bytes(&cpi_target_program_id)
-                        .unwrap()
-                        .as_slice()
-                )
-            );
+        // Execute the instruction that does a CPI.
+        // It's supposed to hang waiting for a TCP connection on the debugger port.
+        std::thread::scope(|s| {
+            let client_jh = s.spawn(|| -> Result<(), std::io::Error> {
+                // Connect to the debugger stub.
+                let (mut reader, mut writer) = stub_connect(STUB_ADDR, STUB_CONNECT_RETRIES)?;
 
-            // Execute the instruction.
-            std::thread::scope(|s| {
-                let client_jh = s.spawn(|| -> Result<(), std::io::Error> {
-                    // Connect to the debugger stub.
+                // Check r2 - it should point to the instruction data whereas the length is 8
+                // bytes prior to it.
+                let data_addr = stub_read_register(&mut writer, &mut reader, 2)?;
+                let data_len = u64::from_le_bytes(
+                    stub_read_memory_chunked(&mut writer, &mut reader, data_addr - 8, 8, 1024)?
+                        .try_into()
+                        .map_err(|_| std::io::Error::other("expected 8 bytes"))?,
+                ) as usize;
+                assert!(instruction_data_len == data_len);
+                let data =
+                    stub_read_memory_chunked(&mut writer, &mut reader, data_addr, data_len, 1024)?;
+                assert!(instruction.data == data);
+
+                // Don't use this approach as it depends on the ABI.
+                // // Verify the program_id reported by the gdbstub matches the one we're
+                // // debugging.
+                // let mut reply = stub_read_memory_chunked(
+                //     &mut writer,
+                //     &mut reader,
+                //     0x400000000,     // The input buffer of the program starts from here.
+                //     1 * 1024 * 1024, // Read 1MB just in case.
+                //     1024,            // Read in chunks of 1024 bytes.
+                // )?;
+                // let (deserialized_program_id, _, _) =
+                //     unsafe { solana_program_entrypoint::deserialize(reply.as_mut_ptr()) };
+                // assert_eq!(program_id, *deserialized_program_id);
+                let parsed_map = stub_fetch_debug_metadata(&mut reader, &mut writer)?;
+
+                // After parsing the reply check the runtime has passed to us the
+                // expected program_id in the metadata.
+                assert!(
+                    parsed_map.get("program_id") == Some(&program_id.to_string())
+                        && parsed_map.get("cpi_level") == Some(&"0".to_string())
+                        && parsed_map.get("caller") == Some(&"none".to_string())
+                );
+
+                // Fire the CPI handling prior to issuing the continue command.
+                let cpi_client_jh = s.spawn(|| -> Result<(), std::io::Error> {
+                    // The CPI means we have another gdb stub instantiated and listening.
                     let (mut reader, mut writer) = stub_connect(STUB_ADDR, STUB_CONNECT_RETRIES)?;
 
-                    // Check r2 - it should point to the instruction data whereas the length is 8
-                    // bytes prior to it.
-                    let data_addr = stub_read_register(&mut writer, &mut reader, 2)?;
-                    let data_len = u64::from_le_bytes(
-                        stub_read_memory_chunked(&mut writer, &mut reader, data_addr - 8, 8, 1024)?
-                            .try_into()
-                            .map_err(|_| std::io::Error::other("expected 8 bytes"))?,
-                    ) as usize;
-                    assert!(instruction_data_len == data_len);
-                    let data = stub_read_memory_chunked(
-                        &mut writer,
-                        &mut reader,
-                        data_addr,
-                        data_len,
-                        1024,
-                    )?;
-                    assert!(instruction.data == data);
-
-                    // Don't use this approach as it depends on the ABI.
-                    // // Verify the program_id reported by the gdbstub matches the one we're
-                    // // debugging.
-                    // let mut reply = stub_read_memory_chunked(
-                    //     &mut writer,
-                    //     &mut reader,
-                    //     0x400000000,     // The input buffer of the program starts from here.
-                    //     1 * 1024 * 1024, // Read 1MB just in case.
-                    //     1024,            // Read in chunks of 1024 bytes.
-                    // )?;
-                    // let (deserialized_program_id, _, _) =
-                    //     unsafe { solana_program_entrypoint::deserialize(reply.as_mut_ptr()) };
-                    // assert_eq!(program_id, *deserialized_program_id);
                     let parsed_map = stub_fetch_debug_metadata(&mut reader, &mut writer)?;
 
-                    // After parsing the reply check the runtime has passed to us the
-                    // expected program_id in the metadata.
+                    // Check the CPI callee and caller and level.
                     assert!(
-                        parsed_map.get("program_id") == Some(&program_id.to_string())
-                            && parsed_map.get("cpi_level") == Some(&"0".to_string())
-                            && parsed_map.get("caller") == Some(&"none".to_string())
+                        parsed_map.get("program_id") == Some(&cpi_target_program_id.to_string())
+                            && parsed_map.get("cpi_level") == Some(&"1".to_string())
+                            && parsed_map.get("caller") == Some(&program_id.to_string())
                     );
-
-                    // Fire the CPI handling prior to issuing the continue command.
-                    let cpi_client_jh = s.spawn(|| -> Result<(), std::io::Error> {
-                        // The CPI means we have another gdb stub instantiated and listening.
-                        let (mut reader, mut writer) =
-                            stub_connect(STUB_ADDR, STUB_CONNECT_RETRIES)?;
-
-                        let parsed_map = stub_fetch_debug_metadata(&mut reader, &mut writer)?;
-
-                        // Check the CPI callee and caller and level.
-                        assert!(
-                            parsed_map.get("program_id")
-                                == Some(&cpi_target_program_id.to_string())
-                                && parsed_map.get("cpi_level") == Some(&"1".to_string())
-                                && parsed_map.get("caller") == Some(&program_id.to_string())
-                        );
-
-                        // Issue the continue command.
-                        stub_send_continue_command(&mut reader, &mut writer)?;
-
-                        Ok(())
-                    });
 
                     // Issue the continue command.
                     stub_send_continue_command(&mut reader, &mut writer)?;
 
-                    cpi_client_jh.join().unwrap().expect("cpi client error");
-
                     Ok(())
                 });
 
-                // Processing...
-                let _ = mollusk.process_instruction(&instruction, accounts);
+                // Issue the continue command.
+                stub_send_continue_command(&mut reader, &mut writer)?;
 
-                client_jh.join().unwrap().expect("client error");
+                cpi_client_jh.join().unwrap().expect("cpi client error");
+
+                Ok(())
             });
 
-            // Phase 3.
-            // Check the program_ids <-> elf sha256 mapping table.
-            let read_program_ids = std::fs::read_to_string(&program_id_file).unwrap();
-            assert_eq!(read_program_ids, expected_program_ids);
-        }
+            // Processing...
+            let _ = mollusk.process_instruction(&instruction, accounts);
+
+            client_jh.join().unwrap().expect("client error");
+        });
+
+        // Check the program_ids <-> elf sha256 mapping table.
+        let read_program_ids = std::fs::read_to_string(&program_id_file).unwrap();
+        assert_eq!(read_program_ids, expected_program_ids);
     }
 }
