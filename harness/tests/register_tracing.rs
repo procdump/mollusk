@@ -579,6 +579,10 @@ mod debugger_tests {
 
         // Check the program_ids <-> elf sha256 mapping table.
         let read_program_ids = std::fs::read_to_string(&program_id_file).unwrap();
-        assert_eq!(read_program_ids, expected_program_ids);
+        let mut read_lines: Vec<&str> = read_program_ids.lines().collect();
+        let mut expected_lines: Vec<&str> = expected_program_ids.lines().collect();
+        read_lines.sort();
+        expected_lines.sort();
+        assert_eq!(read_lines, expected_lines);
     }
 }

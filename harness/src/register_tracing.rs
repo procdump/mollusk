@@ -71,15 +71,14 @@ impl DefaultRegisterTracingCallback {
             // Persist SHA-256 mapping for every ELF account.
             // We need them later to judge what symbol object to
             // load in the debugger client.
-            if let Ok(_program_ids) = self.elf_accounts_to_sha256(
+            let _ = self.elf_accounts_to_sha256(
                 mollusk,
                 program_id,
                 instruction_accounts,
                 invoke_context,
-            ) {
-                if let Some(debug_port) = self.sbf_debug_port {
-                    invoke_context.debug_port = Some(debug_port);
-                }
+            );
+            if let Some(debug_port) = self.sbf_debug_port {
+                invoke_context.debug_port = Some(debug_port);
             }
         }
     }
@@ -150,33 +149,26 @@ impl DefaultRegisterTracingCallback {
     /// Persists a mapping of program IDs to SHA-256 hashes of their ELF bytes.
     /// Includes the top-level program and any instruction accounts that are
     /// programs in the cache. This allows a debugger client to resolve which
-    /// .so to load for symbol information. Returns the list of program IDs
-    /// for which an ELF was found in the cache.
+    /// .so to load for symbol information.
     pub fn elf_accounts_to_sha256(
         &self,
         mollusk: &Mollusk,
         program_id: &Pubkey,
         instruction_accounts: &[InstructionAccount],
         invoke_context: &InvokeContext,
-    ) -> Result<Vec<Pubkey>, Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let current_dir = std::env::current_dir()?;
         let sbf_trace_dir = current_dir.join(&self.sbf_trace_dir);
         std::fs::create_dir_all(&sbf_trace_dir)?;
         let base_fname = sbf_trace_dir.join("program_ids");
-        let mut program_ids = Vec::new();
         let mut program_ids_file = File::create(base_fname.with_extension("map"))?;
 
-        let mut persist_elf_sha256 = |file: &mut File, pubkey: &Pubkey| {
-            if let Some(elf_data) = mollusk.program_cache.get_program_elf_bytes(pubkey) {
-                program_ids.push(*pubkey);
-                let _ = file.write(
-                    format!("{}={}\n", pubkey, compute_hash(elf_data.as_slice())).as_bytes(),
-                );
-            }
-        };
+        // Collect the top-level program and all instruction account pubkeys.
+        // CPI targets appear as instruction accounts, so we include them to
+        // let the debugger resolve their ELF symbols.
+        let mut maybe_elf_program_ids = std::collections::HashSet::new();
 
-        persist_elf_sha256(&mut program_ids_file, program_id);
-
+        maybe_elf_program_ids.insert(program_id);
         instruction_accounts
             .iter()
             .flat_map(|ia| {
@@ -185,10 +177,29 @@ impl DefaultRegisterTracingCallback {
                     .get_key_of_account_at_index(ia.index_in_transaction)
             })
             .for_each(|pubkey| {
-                persist_elf_sha256(&mut program_ids_file, pubkey);
+                maybe_elf_program_ids.insert(pubkey);
             });
 
-        Ok(program_ids)
+        // Only write entries for pubkeys that actually have ELF bytes in the cache.
+        maybe_elf_program_ids
+            .iter()
+            .for_each(|maybe_elf_program_id| {
+                if let Some(elf_data) = mollusk
+                    .program_cache
+                    .get_program_elf_bytes(maybe_elf_program_id)
+                {
+                    let _ = program_ids_file.write(
+                        format!(
+                            "{}={}\n",
+                            maybe_elf_program_id,
+                            compute_hash(elf_data.as_slice())
+                        )
+                        .as_bytes(),
+                    );
+                }
+            });
+
+        Ok(())
     }
 }
 
