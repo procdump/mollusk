@@ -612,8 +612,8 @@ deterministic way to evaluate which shared object should be used when
 analyzing the tracing data.
 
 When the `sbpf-debugger` feature is enabled and `SBF_DEBUG_PORT` is set, the
-VM will start a GDB remote stub on the specified TCP port whenever the filter
-matches. A debugger client can then connect to inspect registers, memory, set
+VM will start a GDB remote stub on the specified TCP port. A debugger client
+can then connect to inspect registers, memory, set
 breakpoints, and step through SBPF execution. The `sbpf-debugger` feature is
 separate because the debugger forces the VM into interpreter mode, whereas
 register traces can be collected from both JIT and interpreter modes.
