@@ -68,16 +68,16 @@ impl DefaultRegisterTracingCallback {
     ) {
         #[cfg(feature = "sbpf-debugger")]
         {
-            // Persist SHA-256 mapping for every ELF account.
-            // We need them later to judge what symbol object to
-            // load in the debugger client.
-            let _ = self.elf_accounts_to_sha256(
-                mollusk,
-                program_id,
-                instruction_accounts,
-                invoke_context,
-            );
             if let Some(debug_port) = self.sbf_debug_port {
+                // Persist SHA-256 mapping for every ELF account.
+                // We need them later to judge what symbol object to
+                // load in the debugger client.
+                let _ = self.elf_accounts_to_sha256(
+                    mollusk,
+                    program_id,
+                    instruction_accounts,
+                    invoke_context,
+                );
                 invoke_context.debug_port = Some(debug_port);
             }
         }
