@@ -247,7 +247,7 @@ impl InvocationInspectCallback for DefaultRegisterTracingCallback {
                     if let Err(e) =
                         self.post_handler(mollusk, instruction_context, executable, register_trace)
                     {
-                        eprintln!("Error collecting the register tracing: {}", e);
+                        eprintln!("Error collecting the register tracing: {e}");
                     }
                 },
             );
