@@ -1,3 +1,9 @@
+//! GDB Remote Serial Protocol (RSP) client helpers for the SBPF debugger.
+//!
+//! Provides low-level packet construction, parsing, and convenience wrappers
+//! for communicating with the GDB stub exposed by the SBPF VM when the
+//! `sbpf-debugger` feature is enabled.
+
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Write},
@@ -5,6 +11,8 @@ use std::{
     time::Duration,
 };
 
+/// Reads a single GDB RSP packet from the stream.
+/// Packets are delimited by `#` followed by a 2-character checksum.
 pub fn read_reply<R: BufRead>(reader: &mut R) -> std::io::Result<String> {
     let mut buf = Vec::new();
 
@@ -21,12 +29,17 @@ pub fn read_reply<R: BufRead>(reader: &mut R) -> std::io::Result<String> {
     Ok(reply)
 }
 
+/// Builds a GDB `m` (read memory) command packet for the given address and
+/// size.
 pub fn gdb_read_memory_cmd(addr: u64, size: usize) -> Vec<u8> {
     let payload = format!("m{:x},{:x}", addr, size);
     let checksum: u8 = payload.bytes().fold(0u8, |acc, b| acc.wrapping_add(b));
     format!("${}#{:02x}", payload, checksum).into_bytes()
 }
 
+/// Parses a GDB RSP packet payload into raw bytes.
+/// Handles the `+` ack prefix, `$` framing, `O` console output prefix,
+/// `#xx` checksum suffix, and `*` run-length encoding.
 pub fn gdb_parse_packet(input: &str) -> Option<Vec<u8>> {
     const GDB_RLE_OFFSET: u8 = 29;
 
@@ -55,12 +68,16 @@ pub fn gdb_parse_packet(input: &str) -> Option<Vec<u8>> {
     hex::decode(&hex_str).ok()
 }
 
+/// Builds a GDB `p` (read single register) command packet for the given
+/// register number.
 pub fn gdb_read_register_cmd(reg_num: usize) -> Vec<u8> {
     let payload = format!("p{reg_num:x}");
     let checksum: u8 = payload.bytes().fold(0u8, |acc, b| acc.wrapping_add(b));
     format!("${}#{:02x}", payload, checksum).into_bytes()
 }
 
+/// Reads a contiguous memory region from the stub in fixed-size chunks.
+/// Splits the request to stay within the stub's packet-size limits.
 pub fn stub_read_memory_chunked<R: BufRead, W: Write>(
     writer: &mut W,
     reader: &mut R,
@@ -89,6 +106,7 @@ pub fn stub_read_memory_chunked<R: BufRead, W: Write>(
     Ok(result)
 }
 
+/// Reads a single 64-bit register value from the stub.
 pub fn stub_read_register<R: BufRead, W: Write>(
     writer: &mut W,
     reader: &mut R,
@@ -107,6 +125,9 @@ pub fn stub_read_register<R: BufRead, W: Write>(
     Ok(reg_value)
 }
 
+/// Fetches debug metadata from the stub via the `qRcmd,metadata` monitor
+/// command. Returns key-value pairs (e.g. `program_id`, `cpi_level`, `caller`)
+/// that the SBPF runtime passes through the GDB stub.
 pub fn stub_fetch_debug_metadata<R: BufRead, W: Write>(
     mut reader: &mut R,
     writer: &mut W,
@@ -137,6 +158,8 @@ pub fn stub_fetch_debug_metadata<R: BufRead, W: Write>(
     Ok(parsed_map)
 }
 
+/// Sends a `vCont;c` (continue all threads) command and waits for the
+/// program to exit (`W00` — clean exit with status 0).
 pub fn stub_send_continue_command<R: BufRead, W: Write>(
     mut reader: &mut R,
     writer: &mut W,
@@ -147,6 +170,8 @@ pub fn stub_send_continue_command<R: BufRead, W: Write>(
     Ok(())
 }
 
+/// Connects to the GDB stub with retries (100ms apart).
+/// Returns a buffered reader and a writer over the same TCP stream.
 pub fn stub_connect<A: ToSocketAddrs>(
     stub_addr: A,
     mut retries: usize,
