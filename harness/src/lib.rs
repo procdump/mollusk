@@ -441,6 +441,8 @@
 
 pub mod account_store;
 mod compile_accounts;
+#[cfg(feature = "sbpf-debugger")]
+pub mod debugger;
 pub mod epoch_stake;
 pub mod file;
 #[cfg(any(feature = "fuzz", feature = "fuzz-fd"))]
