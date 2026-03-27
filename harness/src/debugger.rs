@@ -32,9 +32,9 @@ pub fn read_reply<R: BufRead>(reader: &mut R) -> std::io::Result<String> {
 /// Builds a GDB `m` (read memory) command packet for the given address and
 /// size.
 pub fn gdb_read_memory_cmd(addr: u64, size: usize) -> Vec<u8> {
-    let payload = format!("m{:x},{:x}", addr, size);
+    let payload = format!("m{addr:x},{size:x}");
     let checksum: u8 = payload.bytes().fold(0u8, |acc, b| acc.wrapping_add(b));
-    format!("${}#{:02x}", payload, checksum).into_bytes()
+    format!("${payload}#{checksum:02x}").into_bytes()
 }
 
 /// Parses a GDB RSP packet payload into raw bytes.
@@ -73,7 +73,7 @@ pub fn gdb_parse_packet(input: &str) -> Option<Vec<u8>> {
 pub fn gdb_read_register_cmd(reg_num: usize) -> Vec<u8> {
     let payload = format!("p{reg_num:x}");
     let checksum: u8 = payload.bytes().fold(0u8, |acc, b| acc.wrapping_add(b));
-    format!("${}#{:02x}", payload, checksum).into_bytes()
+    format!("${payload}#{checksum:02x}").into_bytes()
 }
 
 /// Reads a contiguous memory region from the stub in fixed-size chunks.

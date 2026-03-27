@@ -98,7 +98,7 @@ fn test_custom_register_tracing_callback() {
                         if let Err(e) =
                             self.handler(instruction_context, executable, register_trace)
                         {
-                            eprintln!("Error collecting the register tracing: {}", e);
+                            eprintln!("Error collecting the register tracing: {e}");
                         }
                     },
                 );
