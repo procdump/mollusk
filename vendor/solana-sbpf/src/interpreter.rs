@@ -189,9 +189,9 @@ impl<'a, 'b, C: ContextObject> Interpreter<'a, 'b, C> {
 
         if config.enable_register_tracing {
             eprintln!("CUs consumed: {}, previous_instruction_meter: {}, due_insn_count: {}", 1_400_000 - (self.vm.previous_instruction_meter - self.vm.due_insn_count), self.vm.previous_instruction_meter, self.vm.due_insn_count);
-            let mut reg = self.reg;
-            reg[11] |= (self.vm.previous_instruction_meter - self.vm.due_insn_count) << 32;
-            self.vm.register_trace.push(reg);
+            self.reg[11] |= (self.vm.previous_instruction_meter - self.vm.due_insn_count) << 32;
+            self.vm.register_trace.push(self.reg);
+            self.reg[11] &= 0xFFFFFFFF;
         }
 
         match insn.opc {
