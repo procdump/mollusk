@@ -1416,7 +1416,19 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
             for reg in REGISTER_MAP.iter().rev() {
                 self.emit_ins(X86Instruction::push(*reg, None));
             }
-            self.emit_ins(X86Instruction::mov(OperandSize::S64, RSP, REGISTER_MAP[0]));
+            // Encode CUs remaining into r11 slot: reg[11] |= (instruction_meter - pc - 1) << 32
+            // In the JIT, REGISTER_INSTRUCTION_METER is the live counter and REGISTER_SCRATCH holds the current PC
+            // (saved on the stack). The -1 accounts for the current instruction (matching the interpreter where
+            // due_insn_count is incremented before the trace).
+            // Use REGISTER_SCRATCH for the computation (its value is already saved on stack and will be restored on pop).
+            self.emit_ins(X86Instruction::mov(OperandSize::S64, RSP, REGISTER_MAP[0])); // REGISTER_MAP[0] = RSP (stack base)
+            self.emit_ins(X86Instruction::mov(OperandSize::S64, REGISTER_INSTRUCTION_METER, REGISTER_SCRATCH)); // REGISTER_SCRATCH = instruction_meter
+            self.emit_ins(X86Instruction::alu(OperandSize::S64, 0x2B, REGISTER_SCRATCH, REGISTER_MAP[0],
+                Some(X86IndirectAccess::Offset(8 * (REGISTER_MAP.len() as i32))))); // REGISTER_SCRATCH -= saved_pc (stack[11])
+            self.emit_ins(X86Instruction::alu_immediate(OperandSize::S64, 0x81, 5, REGISTER_SCRATCH, 1, None)); // REGISTER_SCRATCH -= 1
+            self.emit_ins(X86Instruction::alu_immediate(OperandSize::S64, 0xc1, 4, REGISTER_SCRATCH, 32, None)); // REGISTER_SCRATCH <<= 32
+            self.emit_ins(X86Instruction::alu(OperandSize::S64, 0x09, REGISTER_SCRATCH, REGISTER_MAP[0],
+                Some(X86IndirectAccess::Offset(8 * (REGISTER_MAP.len() as i32))))); // [stack + 88] |= REGISTER_SCRATCH
             self.emit_ins(X86Instruction::alu_immediate(OperandSize::S64, 0x81, 0, RSP, - 8 * 3, None)); // RSP -= 8 * 3;
             self.emit_rust_call(Value::Constant64(Vec::<crate::static_analysis::RegisterTraceEntry>::push as *const u8 as i64, false), &[
                 Argument { index: 1, value: Value::Register(REGISTER_MAP[0]) }, // registers
@@ -1427,6 +1439,9 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
             self.emit_ins(X86Instruction::pop(REGISTER_MAP[0]));
             self.emit_ins(X86Instruction::alu_immediate(OperandSize::S64, 0x81, 0, RSP, 8 * (REGISTER_MAP.len() - 1) as i64, None)); // RSP += 8 * (REGISTER_MAP.len() - 1);
             self.emit_ins(X86Instruction::pop(REGISTER_SCRATCH));
+            // Clear upper 32 bits of REGISTER_SCRATCH (PC) that were set by the CU encoding above.
+            // A 32-bit mov zero-extends into the full 64-bit register.
+            self.emit_ins(X86Instruction::mov(OperandSize::S32, REGISTER_SCRATCH, REGISTER_SCRATCH));
             self.emit_ins(X86Instruction::return_near());
         }
 
