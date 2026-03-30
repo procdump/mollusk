@@ -489,15 +489,18 @@ impl<'a> Analysis<'a> {
             pc_to_insn_index[insn.ptr + 1] = index;
         }
         for (index, entry) in register_trace.iter().enumerate() {
-            let pc = entry[11] as usize;
+            let pc = (entry[11] as usize) & 0xffffffff;
+            eprintln!("pc: {}", pc);
+            let cus_remaining = (entry[11] as usize) >> 32;
             let insn = &self.instructions[pc_to_insn_index[pc]];
             writeln!(
                 output,
-                "{:5?} {:016X?} {:5?}: {}",
+                "{:5?} {:016X?} {:5?}: {} (CUs left: {})",
                 index,
                 &entry[0..11],
                 pc,
                 self.disassemble_instruction(insn, pc),
+                cus_remaining
             )?;
         }
         Ok(())

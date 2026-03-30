@@ -95,7 +95,7 @@ impl DefaultRegisterTracingCallback {
         let (_, program) = executable.get_text_bytes();
         for regs in register_trace.iter() {
             // The program counter is stored in r11.
-            let pc = regs[11];
+            let pc = regs[11] & 0xffffffff;
             // From the executable fetch the instruction this program counter points to.
             let insn =
                 solana_program_runtime::solana_sbpf::ebpf::get_insn_unchecked(program, pc as usize)
