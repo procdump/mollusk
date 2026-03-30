@@ -38,7 +38,7 @@ fn test_custom_register_tracing_callback() {
                         registers,
                         solana_program_runtime::solana_sbpf::ebpf::get_insn_unchecked(
                             program,
-                            registers[11] as usize,
+                            registers[11] as usize & 0xffffffff,
                         ),
                     )
                 })
