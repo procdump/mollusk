@@ -28,12 +28,13 @@ audit:
 # RUSTSEC-2025-0009: Some AES functions may panic when overflow checking is enabled
 
 build-test-programs:
-	@cargo build-sbf --manifest-path test-programs/cpi-target/Cargo.toml
+	@cargo build-sbf --manifest-path test-programs/cpi-target/Cargo.toml --arch v1 --tools-version v1.54 --debug
 	@cargo build-sbf --manifest-path test-programs/custom-syscall/Cargo.toml
 	@cargo build-sbf --manifest-path test-programs/epoch-stake/Cargo.toml
 	@cargo build-sbf --manifest-path test-programs/instructions-sysvar/Cargo.toml
 	@cargo build-sbf --manifest-path test-programs/noop-log/Cargo.toml
-	@cargo build-sbf --manifest-path test-programs/primary/Cargo.toml
+	@cargo build-sbf --manifest-path test-programs/primary/Cargo.toml --arch v1 --tools-version v1.54 --debug
+
 
 build-test-elfs:
 	@set -e; \
