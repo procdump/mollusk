@@ -96,6 +96,7 @@ fn process_instruction(
             );
 
             invoke(&instruction, std::slice::from_ref(account_info))?;
+            // invoke(&instruction, std::slice::from_ref(account_info))?;
         }
         Some((5, _)) => {
             // Load the same account twice and assert both infos share the
